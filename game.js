@@ -31,7 +31,13 @@ const asciiArt = document.getElementById('ascii-art');
 
 // Utility Functions
 function updateOutput(text) {
-    output.textContent += '\n' + text;
+    const maxMessages = 10; // Maximum number of messages to display
+    const messages = output.textContent.split('\n');
+    messages.push(text);
+    if (messages.length > maxMessages) {
+        messages.shift(); // Remove the oldest message
+    }
+    output.textContent = messages.join('\n');
     output.scrollTop = output.scrollHeight; // Auto-scroll to the bottom
 }
 
@@ -89,18 +95,20 @@ function mainLoop() {
 
     if (gameState.stage >= 1) {
         addAction('Gather Wood', gatherWood);
+        addAction('Mine Stone', mineStone); // Now available at stage 1
     }
     if (gameState.stage >= 2) {
-        addAction('Mine Stone', mineStone);
-    }
-    if (gameState.stage >= 3) {
         addAction('Hunt', hunt);
         addAction('Explore', explore);
     }
-    if (gameState.stage >= 2 && !gameState.flags.builtShelter) {
+    if (!gameState.flags.builtShelter) {
         if (gameState.resources.wood >= 10 && gameState.resources.stone >= 5) {
             addAction('Build Shelter', buildShelter);
         }
+    }
+    if (gameState.flags.builtShelter && !gameState.flags.metMystic) {
+        meetMystic();
+        gameState.flags.metMystic = true;
     }
     if (gameState.stage >= 2) {
         addAction('Craft Tools', openCraftingMenu);
@@ -131,37 +139,37 @@ function displayASCIIArt(scene) {
     switch (scene) {
         case 'forest':
             art = `
-    /\\
-   /**\\
-  /****\\   /\\
- /      \\ /**\\
-/  /\\    /    \\
-`;
+        /\\
+       /**\\
+      /****\\   /\\
+     /      \\ /**\\
+    /  /\\    /    \\
+    `;
             break;
         case 'shelter':
             art = `
-   /\\
-  /  \\
- /____\\
- |    |
- |____|
-`;
+       /\\
+      /  \\
+     /____\\
+     |    |
+     |____|
+    `;
             break;
         case 'enemy':
             art = `
-   /\\
-  (  )
-   \\/
-   /\\
-  /  \\
-`;
+       /\\
+      (  )
+       \\/
+       /\\
+      /  \\
+    `;
             break;
         case 'victory':
             art = `
-  \\o/
-   |
-  / \\
-`;
+      \\o/
+       |
+      / \\
+    `;
             break;
         default:
             art = '';
@@ -182,19 +190,6 @@ function mineStone() {
     let amount = 1 + gameState.workers.miners;
     gameState.resources.stone += amount;
     updateOutput(`You mined ${amount} stone.`);
-    updateStats();
-}
-
-function hunt() {
-    let success = Math.random() > 0.5;
-    if (success) {
-        let foodGained = 2 + gameState.workers.hunters;
-        gameState.resources.food += foodGained;
-        updateOutput(`You hunted and gained ${foodGained} food.`);
-        displayASCIIArt('forest');
-    } else {
-        updateOutput('The hunt was unsuccessful.');
-    }
     updateStats();
 }
 
@@ -383,11 +378,23 @@ function enterLocation(location) {
 }
 
 function randomEvent() {
-    let events = [
-        'A merchant arrives offering rare items.',
-        'A storm damages your shelter.',
-        'Your workers find a hidden treasure.',
-    ];
+    let events = [];
+
+    // Only include events applicable to the player's current state
+    if (gameState.workers.gatherers + gameState.workers.miners + gameState.workers.hunters > 0) {
+        events.push('Your workers find a hidden treasure.');
+    }
+
+    if (gameState.flags.builtShelter) {
+        events.push('A merchant arrives offering rare items.');
+        events.push('A storm damages your shelter.');
+    }
+
+    // Ensure there are events to choose from
+    if (events.length === 0) {
+        return; // No applicable events
+    }
+
     let event = events[Math.floor(Math.random() * events.length)];
 
     switch (event) {
@@ -396,11 +403,9 @@ function randomEvent() {
             encounterMerchant();
             break;
         case 'A storm damages your shelter.':
-            if (gameState.flags.builtShelter) {
-                updateOutput(event);
-                gameState.resources.wood -= 5;
-                updateStats();
-            }
+            updateOutput(event);
+            gameState.resources.wood -= 5;
+            updateStats();
             break;
         case 'Your workers find a hidden treasure.':
             updateOutput(event);
@@ -431,30 +436,6 @@ function encounterMerchant() {
     });
 }
 
-// Advanced Mechanics
-function upgradeWorkers() {
-    if (gameState.resources.gold >= 20) {
-        gameState.resources.gold -= 20;
-        gameState.workers.gatherers += 1;
-        updateOutput('You hired an additional gatherer.');
-        updateStats();
-    } else {
-        updateOutput('Not enough gold to upgrade workers.');
-    }
-}
-
-function researchMagic() {
-    if (gameState.resources.gold >= 100 && !gameState.flags.learnedMagic) {
-        gameState.resources.gold -= 100;
-        gameState.flags.learnedMagic = true;
-        updateOutput('You have unlocked the secrets of magic.');
-    } else if (gameState.flags.learnedMagic) {
-        updateOutput('You have already mastered magic.');
-    } else {
-        updateOutput('Not enough gold to research magic.');
-    }
-}
-
 // Epic Fantasy Plotline
 function progressStory() {
     if (gameState.inventory.artifacts['Lost Relic'] && gameState.flags.learnedMagic && !gameState.flags.finalBattleTriggered) {
@@ -466,7 +447,6 @@ function progressStory() {
 
 function finalBattle() {
     updateOutput('An epic battle ensues...');
-    // Simplified for brevity
     let success = Math.random() > 0.5;
     if (success) {
         updateOutput('You have vanquished the darkness and restored light to the world!');
