@@ -6,13 +6,22 @@ let gameState = {
     resources: {
         wood: 0,
         stone: 0,
+        iron: 0,
         food: 0,
         gold: 0,
     },
     workers: {
+        idle: 0,
         gatherers: 0,
         miners: 0,
         hunters: 0,
+        blacksmiths: 0,
+    },
+    buildings: {
+        shelters: 0,
+        maxWorkers: 0,
+        shelterDurability: {},
+        blacksmith: false,
     },
     inventory: {
         tools: {},
@@ -55,13 +64,17 @@ function addAction(text, onClick) {
 
 function updateStats() {
     statsList.innerHTML = `
-        <li>Wood: ${gameState.resources.wood}</li>
-        <li>Stone: ${gameState.resources.stone}</li>
-        <li>Food: ${gameState.resources.food}</li>
-        <li>Gold: ${gameState.resources.gold}</li>
+        <li>Wood: ${gameState.resources.wood.toFixed(0)}</li>
+        <li>Stone: ${gameState.resources.stone.toFixed(0)}</li>
+        <li>Iron: ${gameState.resources.iron.toFixed(0)}</li>
+        <li>Food: ${gameState.resources.food.toFixed(0)}</li>
+        <li>Gold: ${gameState.resources.gold.toFixed(0)}</li>
+        <li>Shelters: ${gameState.buildings.shelters}</li>
+        <li>Idle Workers: ${gameState.workers.idle}</li>
         <li>Gatherers: ${gameState.workers.gatherers}</li>
         <li>Miners: ${gameState.workers.miners}</li>
         <li>Hunters: ${gameState.workers.hunters}</li>
+        <li>Blacksmiths: ${gameState.workers.blacksmiths}</li>
     `;
 }
 
@@ -95,23 +108,26 @@ function mainLoop() {
 
     if (gameState.stage >= 1) {
         addAction('Gather Wood', gatherWood);
-        addAction('Mine Stone', mineStone); // Now available at stage 1
+        addAction('Mine Stone', mineStone);
     }
     if (gameState.stage >= 2) {
         addAction('Hunt', hunt);
         addAction('Explore', explore);
     }
-    if (!gameState.flags.builtShelter) {
-        if (gameState.resources.wood >= 10 && gameState.resources.stone >= 5) {
-            addAction('Build Shelter', buildShelter);
-        }
+    if (gameState.flags.builtShelter) {
+        addAction('Manage Workers', manageWorkers);
     }
-    if (gameState.flags.builtShelter && !gameState.flags.metMystic) {
-        meetMystic();
-        gameState.flags.metMystic = true;
+    if (gameState.buildings.shelters < 5) {
+        addAction('Build Shelter', buildShelter);
     }
-    if (gameState.stage >= 2) {
-        addAction('Craft Tools', openCraftingMenu);
+    if (gameState.buildings.blacksmith) {
+        addAction('Mine Iron', mineIron);
+    }
+    if (gameState.buildings.shelters >= 2 && !gameState.buildings.blacksmith) {
+        addAction('Build Blacksmith', buildBlacksmith);
+    }
+    if (gameState.flags.metMystic) {
+        // Additional actions if needed
     }
     if (gameState.quests.includes('Find the Lost Relic')) {
         addAction('Continue Quest', startQuest);
@@ -179,34 +195,76 @@ function displayASCIIArt(scene) {
 
 // Resource Gathering Functions
 function gatherWood() {
-    let amount = 1 + gameState.workers.gatherers;
+    let amount = 1 + gameState.workers.gatherers * 1;
     gameState.resources.wood += amount;
-    updateOutput(`You gathered ${amount} wood.`);
+    updateOutput(`You gathered ${amount.toFixed(0)} wood.`);
     updateStats();
     displayASCIIArt('forest');
 }
 
 function mineStone() {
-    let amount = 1 + gameState.workers.miners;
+    let amount = 1 + gameState.workers.miners * 1;
     gameState.resources.stone += amount;
-    updateOutput(`You mined ${amount} stone.`);
+    updateOutput(`You mined ${amount.toFixed(0)} stone.`);
     updateStats();
+}
+
+function mineIron() {
+    let amount = gameState.workers.miners * 0.5;
+    gameState.resources.iron += amount;
+    updateOutput(`Your miners gathered ${amount.toFixed(1)} iron.`);
+    updateStats();
+}
+
+// Hunting Function
+function hunt() {
+    let amount = gameState.workers.hunters * 2;
+    if (amount > 0) {
+        gameState.resources.food += amount;
+        updateOutput(`Your hunters gathered ${amount} food.`);
+        updateStats();
+    } else {
+        updateOutput('You have no hunters assigned.');
+    }
 }
 
 // Building Structures and Crafting Items
 function buildShelter() {
-    if (gameState.resources.wood >= 10 && gameState.resources.stone >= 5) {
-        gameState.resources.wood -= 10;
-        gameState.resources.stone -= 5;
+    let shelterCost = {
+        wood: Math.floor(10 * Math.pow(1.5, gameState.buildings.shelters)),
+        stone: Math.floor(5 * Math.pow(1.5, gameState.buildings.shelters)),
+    };
+
+    if (gameState.resources.wood >= shelterCost.wood && gameState.resources.stone >= shelterCost.stone) {
+        gameState.resources.wood -= shelterCost.wood;
+        gameState.resources.stone -= shelterCost.stone;
+        gameState.buildings.shelters += 1;
+        gameState.buildings.maxWorkers += 3;
         updateOutput('You built a shelter. New villagers arrive.');
-        gameState.workers.gatherers += 2;
-        gameState.workers.miners += 1;
+        gameState.workers.idle += 3;
         gameState.flags.builtShelter = true;
         gameState.stage = 2;
         updateStats();
         displayASCIIArt('shelter');
+
+        // Initialize shelter durability
+        let shelterId = 'shelter_' + gameState.buildings.shelters;
+        gameState.buildings.shelterDurability[shelterId] = 100; // Max durability
     } else {
         updateOutput('Not enough resources to build a shelter.');
+    }
+}
+
+function buildBlacksmith() {
+    if (gameState.resources.wood >= 50 && gameState.resources.stone >= 30 && gameState.resources.iron >= 20) {
+        gameState.resources.wood -= 50;
+        gameState.resources.stone -= 30;
+        gameState.resources.iron -= 20;
+        gameState.buildings.blacksmith = true;
+        updateOutput('You built a Blacksmith.');
+        updateStats();
+    } else {
+        updateOutput('Not enough resources to build a Blacksmith.');
     }
 }
 
@@ -242,6 +300,160 @@ function craftTool(tool) {
         updateOutput(`Not enough resources to craft ${tool}.`);
     }
     mainLoop();
+}
+
+// Worker Management
+function manageWorkers() {
+    clearActions();
+    updateStats();
+    updateInventory();
+
+    updateOutput('Assign your workers to tasks.');
+
+    addAction('Assign Gatherer (+)', () => {
+        if (gameState.workers.idle > 0) {
+            gameState.workers.idle--;
+            gameState.workers.gatherers++;
+            updateStats();
+        }
+        manageWorkers();
+    });
+    addAction('Remove Gatherer (-)', () => {
+        if (gameState.workers.gatherers > 0) {
+            gameState.workers.gatherers--;
+            gameState.workers.idle++;
+            updateStats();
+        }
+        manageWorkers();
+    });
+    addAction('Assign Miner (+)', () => {
+        if (gameState.workers.idle > 0) {
+            gameState.workers.idle--;
+            gameState.workers.miners++;
+            updateStats();
+        }
+        manageWorkers();
+    });
+    addAction('Remove Miner (-)', () => {
+        if (gameState.workers.miners > 0) {
+            gameState.workers.miners--;
+            gameState.workers.idle++;
+            updateStats();
+        }
+        manageWorkers();
+    });
+    addAction('Assign Hunter (+)', () => {
+        if (gameState.workers.idle > 0) {
+            gameState.workers.idle--;
+            gameState.workers.hunters++;
+            updateStats();
+        }
+        manageWorkers();
+    });
+    addAction('Remove Hunter (-)', () => {
+        if (gameState.workers.hunters > 0) {
+            gameState.workers.hunters--;
+            gameState.workers.idle++;
+            updateStats();
+        }
+        manageWorkers();
+    });
+    if (gameState.buildings.blacksmith) {
+        addAction('Assign Blacksmith (+)', () => {
+            if (gameState.workers.idle > 0) {
+                gameState.workers.idle--;
+                gameState.workers.blacksmiths++;
+                updateStats();
+            }
+            manageWorkers();
+        });
+        addAction('Remove Blacksmith (-)', () => {
+            if (gameState.workers.blacksmiths > 0) {
+                gameState.workers.blacksmiths--;
+                gameState.workers.idle++;
+                updateStats();
+            }
+            manageWorkers();
+        });
+    }
+    addAction('Back', mainLoop);
+}
+
+// Adjust Workers After Shelter Loss
+function adjustWorkersAfterShelterLoss() {
+    let totalWorkers = gameState.workers.idle + gameState.workers.gatherers + gameState.workers.miners + gameState.workers.hunters + gameState.workers.blacksmiths;
+    if (totalWorkers > gameState.buildings.maxWorkers) {
+        let excessWorkers = totalWorkers - gameState.buildings.maxWorkers;
+        // Remove excess workers starting from idle
+        if (gameState.workers.idle >= excessWorkers) {
+            gameState.workers.idle -= excessWorkers;
+        } else {
+            excessWorkers -= gameState.workers.idle;
+            gameState.workers.idle = 0;
+            // Remove from other worker types as needed
+            if (gameState.workers.gatherers >= excessWorkers) {
+                gameState.workers.gatherers -= excessWorkers;
+            } else {
+                excessWorkers -= gameState.workers.gatherers;
+                gameState.workers.gatherers = 0;
+                if (gameState.workers.miners >= excessWorkers) {
+                    gameState.workers.miners -= excessWorkers;
+                } else {
+                    excessWorkers -= gameState.workers.miners;
+                    gameState.workers.miners = 0;
+                    if (gameState.workers.hunters >= excessWorkers) {
+                        gameState.workers.hunters -= excessWorkers;
+                    } else {
+                        excessWorkers -= gameState.workers.hunters;
+                        gameState.workers.hunters = 0;
+                        // Continue for other worker types if necessary
+                    }
+                }
+            }
+        }
+        updateOutput(`${excessWorkers} workers have left due to lack of shelter.`);
+    }
+}
+
+// Shelter Repair Mechanics
+function damageShelter() {
+    let shelterIds = Object.keys(gameState.buildings.shelterDurability);
+    if (shelterIds.length > 0) {
+        let randomShelter = shelterIds[Math.floor(Math.random() * shelterIds.length)];
+        gameState.buildings.shelterDurability[randomShelter] -= 50; // Reduce durability
+        if (gameState.buildings.shelterDurability[randomShelter] <= 0) {
+            updateOutput('A shelter was destroyed!');
+            delete gameState.buildings.shelterDurability[randomShelter];
+            gameState.buildings.shelters--;
+            gameState.buildings.maxWorkers -= 3;
+            // Handle excess workers
+            adjustWorkersAfterShelterLoss();
+        } else {
+            updateOutput('One of your shelters was damaged.');
+            addAction('Repair Shelter', repairShelter);
+        }
+        updateStats();
+    }
+}
+
+function repairShelter() {
+    let repairCost = { wood: 5, stone: 2 };
+    if (gameState.resources.wood >= repairCost.wood && gameState.resources.stone >= repairCost.stone) {
+        gameState.resources.wood -= repairCost.wood;
+        gameState.resources.stone -= repairCost.stone;
+        // Repair the most damaged shelter
+        let shelterIds = Object.keys(gameState.buildings.shelterDurability);
+        let damagedShelter = shelterIds.find(id => gameState.buildings.shelterDurability[id] < 100);
+        if (damagedShelter) {
+            gameState.buildings.shelterDurability[damagedShelter] = 100; // Restore durability
+            updateOutput('You repaired a shelter.');
+            updateStats();
+        }
+        clearActions();
+        mainLoop();
+    } else {
+        updateOutput('Not enough resources to repair the shelter.');
+    }
 }
 
 // Introducing NPCs and Dialogue Choices
@@ -404,8 +616,7 @@ function randomEvent() {
             break;
         case 'A storm damages your shelter.':
             updateOutput(event);
-            gameState.resources.wood -= 5;
-            updateStats();
+            damageShelter();
             break;
         case 'Your workers find a hidden treasure.':
             updateOutput(event);
@@ -417,6 +628,7 @@ function randomEvent() {
 
 function encounterMerchant() {
     clearActions();
+    updateOutput('A merchant arrives offering rare items.');
     addAction('Buy Artifact (50 Gold)', () => {
         if (gameState.resources.gold >= 50) {
             gameState.resources.gold -= 50;
@@ -481,8 +693,22 @@ function restartGame() {
     location.reload();
 }
 
+// Start Random Events
+function startRandomEvents() {
+    if (document.visibilityState === 'visible') {
+        randomEvent();
+    }
+    setTimeout(startRandomEvents, 30000); // Every 30 seconds
+}
+
+document.addEventListener('visibilitychange', function() {
+    if (document.visibilityState === 'visible') {
+        updateOutput('You return to the game.');
+    } else {
+        updateOutput('You have left the game.');
+    }
+});
+
 // Start the game
 startGame();
-
-// Call randomEvent periodically
-setInterval(randomEvent, 30000); // Every 30 seconds
+startRandomEvents();
